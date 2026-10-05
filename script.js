@@ -62,7 +62,7 @@
 
   games.forEach((game, index) => { game.number = String(index + 1).padStart(2, "0"); game.tag = game.tag.replace(/\d+$/, game.number); });
   const cabinetCount = document.querySelector(".cabinet-count");
-  if (cabinetCount) cabinetCount.textContent = `${games.length} / ${games.length}`;
+  let currentFilter = "all";
 
   const microModes = {
     "pixel-pong": "timing", "rocket-recall": "fishing", "word-worm": "typing", "color-catch": "paint", "star-stack": "catch", "circuit-switch": "rewire", "beat-tap": "drum", "maze-flip": "navigate", "sum-sprint": "typing", "laser-lane": "dodge", "memory-rush": "sequence", "block-balance": "stack", "orbit-match": "orbit", "bubble-burst": "shooter", "code-cracker": "sort", "switchback": "balance", "dot-collector": "gravity", "signal-scan": "scanner", "last-light": "defender"
@@ -168,6 +168,7 @@
       cancelAnimationFrame(animationId); animationId = requestAnimationFrame(loop);
     }
   });
+  const taskTracker = window.createTaskTracker({ games, onChange: refreshGameAccess });
 
   function setScore(next) {
     const gain = next - score;
@@ -250,7 +251,12 @@
   }
 
   function showOverlay(game, title = game.title, message = game.help) {
-    overlayTitle.textContent = title.toUpperCase(); overlayText.textContent = message; startButton.innerHTML = `<span>▶</span> ${gameRunning ? "PLAY AGAIN" : "START GAME"}`; startOverlay.classList.remove("is-hidden");
+    const unlocked = taskTracker.isUnlocked(game.id), ready = taskTracker.availableUnlocks() > 0;
+    overlayTitle.textContent = title.toUpperCase();
+    overlayText.textContent = unlocked ? message : ready ? "A game unlock is ready for this cabinet." : `${10 - taskTracker.snapshot().completedTotal % 10} more completed tasks to earn a game unlock.`;
+    startButton.disabled = !unlocked && !ready;
+    startButton.innerHTML = unlocked ? `<span>▶</span> ${gameRunning ? "PLAY AGAIN" : "START GAME"}` : ready ? "UNLOCK GAME" : "GAME LOCKED";
+    startOverlay.classList.remove("is-hidden");
   }
 
   function endGame(message = "NICE RUN. HIT PLAY AGAIN TO GO AGAIN.") {
@@ -264,12 +270,13 @@
   }
 
   function beginGame() {
+    if (!taskTracker.isUnlocked(currentGame)) return false;
     gameRunning = true; paused = false; pauseBadge.hidden = true; startOverlay.classList.add("is-hidden"); document.getElementById("bonusStageButton").hidden = true;
     state = {}; setScore(0); initializeGame(currentGame); powers.reset(); earnPoints(roundReward());
     canvas.focus({ preventScroll: true });
     lastTime = performance.now(); cancelAnimationFrame(animationId); animationId = requestAnimationFrame(loop); tone(520, .08);
   }
-function resetProgress() { if (!window.confirm("Reset all points, shop items, high scores, and arcade progress?")) return; cancelAnimationFrame(animationId); gameRunning = false; paused = false; pauseBadge.hidden = true; ["pixelPlayPoints", "pixelPlayShopItems", "pixelPlayEquippedItems", "pixelPlayBest", "pixelPlayGames", "pixelPlayOwnerVerified"].forEach((key) => localStorage.removeItem(key)); points = 0; bestScore = 0; gamesPlayed = 0; ownedShopItems = []; equippedShopItems = []; ownerVerified = false; document.body.classList.remove("is-owner"); document.getElementById("ownerButton").textContent = "OWNER"; setPoints(0); if (bestScoreLabel) bestScoreLabel.textContent = "0"; if (gamesPlayedLabel) gamesPlayedLabel.textContent = "0"; setScore(0); powers.reset(); applyShopEffects(); renderShop(); shopStatus.textContent = "ARCADE PROGRESS RESET. READY WHEN YOU ARE."; initializeGame(currentGame); drawCurrent(); showOverlay(games.find((item) => item.id === currentGame)); document.getElementById("bonusStageButton").hidden = true; tone(260, .08); }
+function resetProgress() { if (!window.confirm("Reset all tasks, game unlocks, points, shop items, high scores, and arcade progress?")) return; cancelAnimationFrame(animationId); gameRunning = false; paused = false; pauseBadge.hidden = true; ["pixelPlayPoints", "pixelPlayShopItems", "pixelPlayEquippedItems", "pixelPlayBest", "pixelPlayGames", "pixelPlayOwnerVerified"].forEach((key) => localStorage.removeItem(key)); taskTracker.reset(); points = 0; bestScore = 0; gamesPlayed = 0; ownedShopItems = []; equippedShopItems = []; ownerVerified = false; document.body.classList.remove("is-owner"); document.getElementById("ownerButton").textContent = "OWNER"; setPoints(0); if (bestScoreLabel) bestScoreLabel.textContent = "0"; if (gamesPlayedLabel) gamesPlayedLabel.textContent = "0"; setScore(0); powers.reset(); applyShopEffects(); renderShop(); shopStatus.textContent = "ARCADE PROGRESS RESET. READY WHEN YOU ARE."; initializeGame(currentGame); drawCurrent(); showOverlay(games.find((item) => item.id === currentGame)); document.getElementById("bonusStageButton").hidden = true; tone(260, .08); }
 
   function loop(time) {
     if (!gameRunning) return; const dt = Math.min(50, time - lastTime); lastTime = time;
@@ -655,7 +662,7 @@ function resetProgress() { if (!window.confirm("Reset all points, shop items, hi
   });
   document.getElementById("exportProfile").addEventListener("click", () => {
     if (!hasShopEffect("cloud")) return;
-    const profile = { format: "pixel-play-save", version: 1, points, bestScore, gamesPlayed, ownedShopItems, equippedShopItems };
+    const profile = { format: "pixel-play-save", version: 1, points, bestScore, gamesPlayed, ownedShopItems, equippedShopItems, taskProgress: taskTracker.snapshot() };
     const url = URL.createObjectURL(new Blob([JSON.stringify(profile, null, 2)], { type: "application/json" }));
     const download = document.createElement("a"); download.href = url; download.download = "pixel-play-save.json";
     document.body.append(download); download.click(); download.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -668,6 +675,7 @@ function resetProgress() { if (!window.confirm("Reset all points, shop items, hi
       const saved = JSON.parse(await file.text());
       if (saved.format !== "pixel-play-save" || saved.version !== 1 || ![saved.points, saved.bestScore, saved.gamesPlayed].every((n) => Number.isSafeInteger(n) && n >= 0) || !Array.isArray(saved.ownedShopItems) || !Array.isArray(saved.equippedShopItems)) throw new Error("Choose a valid Pixel Play save.");
       const ids = new Set(shopItems.map((item) => item.id));
+      if (saved.taskProgress !== undefined && !taskTracker.restore(saved.taskProgress)) throw new Error("The task progress in this save is invalid.");
       ownedShopItems = [...new Set(saved.ownedShopItems.filter((id) => ids.has(id)))];
       if (ownedShopItems.includes("pixel-vip")) ownedShopItems = shopItems.map((item) => item.id);
       equippedShopItems = [];
@@ -680,7 +688,7 @@ function resetProgress() { if (!window.confirm("Reset all points, shop items, hi
       localStorage.setItem("pixelPlayBest", bestScore); localStorage.setItem("pixelPlayGames", gamesPlayed);
       cancelAnimationFrame(animationId); gameRunning = false; paused = false; pauseBadge.hidden = true;
       initializeGame(currentGame); setScore(0); powers.reset(); applyShopEffects(); renderShop(); drawCurrent(); showOverlay(games.find((game) => game.id === currentGame));
-      shopStatus.textContent = "SAVE RESTORED. POINTS, PURCHASES, AND RECORDS ARE BACK.";
+      shopStatus.textContent = "SAVE RESTORED. TASKS, GAME UNLOCKS, POINTS, PURCHASES, AND RECORDS ARE BACK.";
     } catch (error) { shopStatus.textContent = error.message; }
     event.target.value = "";
   });
@@ -690,7 +698,7 @@ function resetProgress() { if (!window.confirm("Reset all points, shop items, hi
   canvas.addEventListener("click", (event) => { const p = canvasPosition(event); if (powers.collectAt(p.x, p.y)) event.stopImmediatePropagation(); });
   document.getElementById("bonusStageButton").addEventListener("click", () => { if (powers.canBonus()) powers.startBonus(); });
   function handleKey(event) {
-    if (!shopModal.hidden || !ownerModal.hidden || event.target?.isContentEditable || event.target?.matches("input, textarea, select")) return;
+    if (!shopModal.hidden || !ownerModal.hidden || event.target?.isContentEditable || event.target?.matches("input, textarea, select") || event.target?.closest?.(".task-section")) return;
     const key = event.key, lower = key.toLowerCase();
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(key)) {
       event.preventDefault();
@@ -757,10 +765,31 @@ function resetProgress() { if (!window.confirm("Reset all points, shop items, hi
   function togglePause() { if (!gameRunning) return; paused = !paused; pauseBadge.hidden = !paused; if (!paused) lastTime = performance.now(); }
   function selectGame(id) { if (id === currentGame && !startOverlay.classList.contains("is-hidden")) return; cancelAnimationFrame(animationId); gameRunning = false; paused = false; currentGame = id; canvas.classList.toggle("is-search-game", id === "signal-scan"); const game = games.find((item) => item.id === id); titleLabel.textContent = game.title; gameLabel.textContent = game.title.toUpperCase(); gameTag.textContent = game.tag; objectiveLabel.textContent = game.objective; tipText.textContent = game.tip; livesLabel.textContent = id === "maze" ? "♥ ♥ ♥" : id === "blocks" ? "LEVEL 01" : "READY"; canvas.setAttribute("aria-label", `${game.title} game canvas`); showOverlay(game); initializeGame(id); powers.reset(); document.getElementById("bonusStageButton").hidden = true; drawCurrent(); document.querySelectorAll(".game-card").forEach((card) => card.classList.toggle("is-selected", card.dataset.game === id)); }
 
-  function applyFilter(filter) { document.querySelectorAll(".filter-button").forEach((item) => item.classList.toggle("is-active", item.dataset.filter === filter)); document.querySelectorAll(".game-card").forEach((card) => { const isFilteredOut = filter !== "all" && card.dataset.category !== filter; card.hidden = isFilteredOut; card.classList.toggle("is-filtered-out", isFilteredOut); }); }
-  function buildCards() { const wrap = document.getElementById("gameCards"); wrap.innerHTML = games.map((game) => `<button class="game-card${game.id === currentGame ? " is-selected" : ""}" type="button" data-game="${game.id}" data-category="${game.category}"><span class="game-number">${game.number}</span><span><h3>${game.title}</h3><p>${game.desc}</p></span><span class="game-meta"><i class="mini-signal"></i>${game.category}</span></button>`).join(""); wrap.addEventListener("click", (event) => { const card = event.target.closest(".game-card"); if (card && !card.hidden) { selectGame(card.dataset.game); document.getElementById("cabinet").scrollIntoView({ behavior: "smooth", block: "center" }); } }); }
+  function applyFilter(filter) { currentFilter = filter; document.querySelectorAll(".filter-button").forEach((item) => item.classList.toggle("is-active", item.dataset.filter === filter)); document.querySelectorAll(".game-card").forEach((card) => { const isFilteredOut = filter !== "all" && card.dataset.category !== filter; card.hidden = isFilteredOut; card.classList.toggle("is-filtered-out", isFilteredOut); }); }
+  function renderCards() {
+    const ready = taskTracker.availableUnlocks() > 0;
+    const wrap = document.getElementById("gameCards"), scrollTop = wrap.scrollTop;
+    wrap.innerHTML = games.map((game) => {
+      const unlocked = taskTracker.isUnlocked(game.id);
+      const status = unlocked ? game.category : ready ? "UNLOCK" : "LOCKED";
+      return `<button class="game-card${game.id === currentGame ? " is-selected" : ""}${unlocked ? "" : " is-locked"}${!unlocked && ready ? " is-unlockable" : ""}" type="button" data-game="${game.id}" data-category="${game.category}" aria-label="${game.title}, ${unlocked ? "play" : ready ? "unlock for 10 completed tasks" : "locked"}"><span class="game-number">${game.number}</span><span><h3>${game.title}</h3><p>${game.desc}</p></span><span class="game-meta"><i class="${unlocked ? "mini-signal" : "lock-symbol"}" aria-hidden="true"></i>${status}</span></button>`;
+    }).join("");
+    if (cabinetCount) cabinetCount.textContent = `${taskTracker.snapshot().unlockedGames.length} / ${games.length}`;
+    applyFilter(currentFilter);
+    wrap.scrollTop = scrollTop;
+  }
+  function refreshGameAccess() { renderCards(); if (currentGame && !gameRunning) showOverlay(games.find((game) => game.id === currentGame)); }
+  function buildCards() {
+    renderCards();
+    document.getElementById("gameCards").addEventListener("click", (event) => {
+      const card = event.target.closest(".game-card"); if (!card || card.hidden) return;
+      if (!taskTracker.isUnlocked(card.dataset.game) && taskTracker.unlock(card.dataset.game)) tone(760, .08);
+      selectGame(card.dataset.game);
+      document.getElementById("cabinet").scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
   document.querySelector(".filter-row").addEventListener("click", (event) => { const button = event.target.closest(".filter-button"); if (button) applyFilter(button.dataset.filter); });
-  startButton.addEventListener("click", beginGame); document.getElementById("resetButton").addEventListener("click", resetProgress); document.getElementById("pauseButton").addEventListener("click", togglePause); document.getElementById("actionButton").addEventListener("click", () => { if (!gameRunning) beginGame(); else if (paused || powers.isBonus()) return; else if (currentGame === "math") answerMath(state.focus ?? 0); else if (currentGame === "word") submitWord(); else if (currentGame === "blocks") { while (!collides(state.piece, 0, 1)) state.piece.y++; lockPiece(); } else if (state.variant === "scanner") hitScanner(); else if (state.mode === "micro") clickMicro(state.target.x, state.target.y); });
+  startButton.addEventListener("click", () => { if (!taskTracker.isUnlocked(currentGame)) { if (taskTracker.unlock(currentGame)) tone(760, .08); } else beginGame(); }); document.getElementById("resetButton").addEventListener("click", resetProgress); document.getElementById("pauseButton").addEventListener("click", togglePause); document.getElementById("actionButton").addEventListener("click", () => { if (!gameRunning) beginGame(); else if (paused || powers.isBonus()) return; else if (currentGame === "math") answerMath(state.focus ?? 0); else if (currentGame === "word") submitWord(); else if (currentGame === "blocks") { while (!collides(state.piece, 0, 1)) state.piece.y++; lockPiece(); } else if (state.variant === "scanner") hitScanner(); else if (state.mode === "micro") clickMicro(state.target.x, state.target.y); });
   dpadButtons.forEach((button) => button.addEventListener("click", () => { handleKey({ key: button.dataset.key, preventDefault() {} }); }));
   canvas.addEventListener("click", (event) => { if (!gameRunning || paused) return; const point = canvasPosition(event); if (currentGame === "reflex") clickReflex(point.x, point.y); if (currentGame === "memory") { const size = 54, gap = 12, ox = (W - 4 * size - 3 * gap) / 2, oy = 47; const col = Math.floor((point.x - ox) / (size + gap)); const row = Math.floor((point.y - oy) / (size + gap)); if (col >= 0 && col < 4 && row >= 0 && row < 3) clickMemory(row * 4 + col); } if (currentGame === "math") { const i = Math.floor((point.x - 90) / 120); answerMath(i); } if (currentGame === "color") { const i = Math.floor((point.x - 78) / 102); answerColor(i); } if (state.mode === "micro") clickMicro(point.x, point.y); });
   window.addEventListener("keydown", handleKey, { capture: true, passive: false }); document.getElementById("soundToggle").addEventListener("click", (event) => { soundOn = !soundOn; event.currentTarget.setAttribute("aria-pressed", String(soundOn)); event.currentTarget.querySelector(".sound-copy").textContent = soundOn ? "SOUND ON" : "SOUND OFF"; if (soundOn) tone(620, .08); });
@@ -769,5 +798,5 @@ function resetProgress() { if (!window.confirm("Reset all points, shop items, hi
   canvas.addEventListener("pointerdown", () => canvas.focus({ preventScroll: true }));
   document.getElementById("actionButton").addEventListener("click", () => { if (currentGame === "jelly-jump") jumpJelly(); });
   setInterval(() => { document.getElementById("clockLabel").textContent = new Date().toLocaleTimeString([], { hour12: false }); }, 1000);
-  saveShopItems(); applyOwnerMode(); buildCards(); applyFilter("all"); selectGame("maze");
+  saveShopItems(); applyOwnerMode(); buildCards(); applyFilter("all"); selectGame(taskTracker.snapshot().unlockedGames[0] || "maze");
 })();

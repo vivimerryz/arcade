@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101116">
-  <title>Pixel Play // Arcade Lab</title>
+  <title>Pixel Play // Task Arcade</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -21,6 +21,7 @@
       <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
       <span>PIXEL<span class="brand-slash">//</span>PLAY</span>
     </a>
+    <a class="tasks-link" href="#tasks">TASKS</a>
     <div class="topbar-meta">
       <span class="live-dot"><b></b> LIVE ARCADE</span>
       <span class="top-divider" aria-hidden="true"></span>
@@ -36,11 +37,30 @@
   </header>
 
   <main id="top" class="site-wrap">
+    <section class="task-section" id="tasks" aria-labelledby="taskTitle">
+      <div class="task-workspace">
+        <div class="task-heading"><h2 id="taskTitle">Your tasks</h2><span id="taskCount">0 TO DO</span></div>
+        <form class="task-form" id="taskForm">
+          <label class="sr-only" for="taskInput">New task</label>
+          <input id="taskInput" type="text" maxlength="200" placeholder="What needs to get done?" autocomplete="off" required>
+          <button type="submit"><span aria-hidden="true">+</span> Add task</button>
+        </form>
+        <ul class="task-list" id="taskList" aria-label="Your task list"></ul>
+        <p class="task-empty" id="taskEmpty">No tasks yet.</p>
+      </div>
+      <div class="task-rewards">
+        <span class="task-reward-label">NEXT GAME UNLOCK</span>
+        <div class="task-progress-heading"><strong id="taskProgressLabel">0 / 10</strong><span>tasks completed</span></div>
+        <progress id="taskProgress" max="10" value="0" aria-label="Progress toward your next game unlock"></progress>
+        <p class="task-reward-status" id="taskRewardStatus" role="status" aria-live="polite">10 tasks to your first game.</p>
+        <div class="task-totals"><span><b id="tasksCompleted">0</b> COMPLETED</span><span><b id="gamesUnlocked">0</b> GAMES UNLOCKED</span></div>
+      </div>
+    </section>
     <section class="arcade-layout" aria-label="Game arcade">
       <aside class="game-list-panel">
         <div class="section-heading">
-          <div><p class="eyebrow small"><span class="eyebrow-line"></span> THE FLOOR</p><h2>Choose your game</h2></div>
-          <span class="cabinet-count">29 / 29</span>
+          <div><p class="eyebrow small"><span class="eyebrow-line"></span> YOUR REWARDS</p><h2>Choose your game</h2></div>
+          <span class="cabinet-count">0 / 29</span>
         </div>
         <div class="filter-row" role="group" aria-label="Filter games">
           <button class="filter-button is-active" type="button" data-filter="all">All</button>
@@ -133,6 +153,7 @@
   </div>
   <footer class="site-footer"><span>PIXEL//PLAY ARCADE LAB</span><span>MADE FOR PLAYING, NOT WAITING</span><span>PRESS ANYTHING</span></footer>
   <script src="shop-powers.js"></script>
+  <script src="task-tracker.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

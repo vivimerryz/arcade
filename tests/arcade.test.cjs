@@ -7,12 +7,18 @@ const test = require("node:test");
 const root = path.resolve(__dirname, "..");
 const powersSource = fs.readFileSync(path.join(root, "shop-powers.js"), "utf8");
 const scriptSource = fs.readFileSync(path.join(root, "script.js"), "utf8");
+const trackerSource = fs.readFileSync(path.join(root, "task-tracker.js"), "utf8");
+const gameIds = [...scriptSource.match(/const games = \[([\s\S]*?)\n  \];/)[1].matchAll(/id: "([^"]+)"/g)].map((match) => match[1]);
 
 // Exercise the actual game code without adding testing hooks to the website.
-function arcade(saved = {}) {
+function arcade(saved = {}, unlockAll = true) {
   const elements = new Map();
-  const storage = new Map(Object.entries(saved).map(([key, value]) => [key, String(value)]));
+  // Existing game tests represent a player who has already earned every cabinet.
+  const progress = unlockAll ? { pixelPlayTaskProgress: JSON.stringify({ tasks: [], completedTotal: gameIds.length * 10, unlockedGames: gameIds }) } : {};
+  const storage = new Map(Object.entries({ ...progress, ...saved }).map(([key, value]) => [key, String(value)]));
+  let createdElements = 0;
   const drawing = [];
+  const downloads = [];
   const keyboardListeners = [];
   const ctx = new Proxy({}, {
     get(target, key) {
@@ -28,21 +34,22 @@ function arcade(saved = {}) {
     const listeners = new Map();
     const node = {
       id, width: 640, height: 400, hidden: ["shopModal", "ownerModal", "pauseBadge"].includes(id),
-      textContent: "", innerHTML: "", dataset: {}, style: { setProperty() {} },
+      textContent: "", innerHTML: "", value: "", scrollTop: 0, children: [], dataset: {}, style: { setProperty() {} },
       classList: {
         add: (name) => classes.add(name), remove: (name) => classes.delete(name), contains: (name) => classes.has(name),
         toggle(name, on) { if (on === undefined) on = !classes.has(name); if (on) classes.add(name); else classes.delete(name); }
       },
       getContext: () => ctx, getBoundingClientRect: () => ({ left: 10, top: 20, width: 320, height: 200 }), setAttribute() {}, querySelector: (selector) => element(`${id}:${selector}`),
-      querySelectorAll: () => [], focus(options) { document.activeElement = node; node.focusOptions = options; }, reset() { node.values = {}; }, scrollIntoView() {}, append() {}, remove() {}, matches: () => false,
+      querySelectorAll: () => [], focus(options) { document.activeElement = node; node.focusOptions = options; }, reset() { node.values = {}; }, scrollIntoView() {}, append(...children) { node.children.push(...children); }, replaceChildren(...children) { node.children = children; }, remove() {}, matches: () => false,
       addEventListener(name, callback) { const list = listeners.get(name) || []; list.push(callback); listeners.set(name, list); },
+      click() { return node.fire("click"); },
       fire(name, event = {}) { return Promise.all((listeners.get(name) || []).map((callback) => callback({ preventDefault() {}, currentTarget: node, target: node, ...event }))); }
     };
     elements.set(id, node);
     return node;
   }
   const document = {
-    getElementById: element, querySelector: element, querySelectorAll: () => [], createElement: element,
+    getElementById: element, querySelector: element, querySelectorAll: () => [], createElement: (tag) => element(`${tag}-${++createdElements}`),
     addEventListener() {}, body: element("body")
   };
   const context = vm.createContext({
@@ -50,26 +57,192 @@ function arcade(saved = {}) {
     FormData: class { constructor(form) { this.values = form.values; } get(name) { return this.values[name]; } },
     localStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)), removeItem: (key) => storage.delete(key) },
     performance: { now: () => 0 }, requestAnimationFrame: () => 1, cancelAnimationFrame() {}, setInterval() {}, setTimeout() {},
-    URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
+    URL: { createObjectURL: (blob) => { downloads.push(blob); return "blob:test"; }, revokeObjectURL() {} },
     window: { confirm: () => true, addEventListener(name, handler, options) { keyboardListeners.push({ name, handler, options }); } }
   });
   vm.runInContext(powersSource, context, { filename: "shop-powers.js" });
+  vm.runInContext(trackerSource, context, { filename: "task-tracker.js" });
   const hooks = `window.testArcade = {
-    games, shopItems, powers, selectGame, beginGame, endGame, buyShopItem, setPoints,
+    games, shopItems, powers, taskTracker, selectGame, beginGame, endGame, buyShopItem, setPoints,
     updateGame, drawCurrent, handleKey, jumpJelly, resetProgress, openOwner, closeOwner, moveScanner, hitScanner, scannerRadius, detectorReading,
     getState: () => state, getScore: () => score, isRunning: () => gameRunning,
-    getPoints: () => points, isOwner: () => ownerVerified,
+    getPoints: () => points, isOwner: () => ownerVerified, getFilter: () => currentFilter,
     owned: () => ownedShopItems, equipped: () => equippedShopItems
   };`;
   const source = scriptSource.replace(/\}\)\(\);\s*$/, `${hooks}\n})();`);
   vm.runInContext(source, context, { filename: "script.js" });
-  return { ...context.window.testArcade, element, storage, drawing, keyboardListeners, document };
+  return { ...context.window.testArcade, element, storage, drawing, downloads, keyboardListeners, document };
 }
 
 function verify(app, answers = { name: "Felicia", color: "pink", secondColor: "purple", thirdColor: "blue", gender: "girl" }) {
   app.element("ownerForm").values = answers;
   return app.element("ownerForm").fire("submit");
 }
+
+function completeTasks(app, count) {
+  for (let i = 0; i < count; i++) {
+    app.taskTracker.add(`Task ${i + 1}`);
+    app.taskTracker.toggle(app.taskTracker.snapshot().tasks.at(-1).id);
+  }
+}
+
+test("New players must finish 10 tasks before playing, with no points from locked games", async () => {
+  const app = arcade({}, false);
+  assert.equal(app.element("startButton").disabled, true);
+  app.beginGame();
+  assert.equal(app.isRunning(), false);
+  assert.equal(app.getPoints(), 0);
+  completeTasks(app, 9);
+  assert.equal(app.taskTracker.availableUnlocks(), 0);
+  assert.equal(app.taskTracker.unlock("neon"), false);
+  assert.equal(app.element("taskProgress").value, 9);
+  completeTasks(app, 1);
+  assert.equal(app.taskTracker.availableUnlocks(), 1);
+  assert.equal(app.element("startButton").disabled, false);
+  assert.match(app.element("taskRewardStatus").textContent, /1 game unlock ready/);
+  assert.equal(app.taskTracker.unlock("neon"), true);
+  assert.equal(app.taskTracker.availableUnlocks(), 0);
+  assert.equal(app.taskTracker.unlock("maze"), false);
+  app.selectGame("neon"); app.beginGame();
+  assert.equal(app.isRunning(), true);
+  assert.equal(app.getPoints(), 50);
+  app.selectGame("maze"); app.beginGame();
+  assert.equal(app.isRunning(), false);
+  assert.equal(app.getPoints(), 50);
+  await verify(app);
+  app.buyShopItem("pixel-vip"); app.beginGame();
+  assert.equal(app.isRunning(), false, "Owner points and VIP must not bypass the task gate");
+});
+
+test("Every 10 distinct tasks earns a choice, without repeat or duplicate-unlock farming", () => {
+  const app = arcade({}, false);
+  completeTasks(app, 30);
+  const first = app.taskTracker.snapshot().tasks[0].id;
+  app.taskTracker.toggle(first); app.taskTracker.toggle(first);
+  assert.equal(app.taskTracker.snapshot().completedTotal, 30);
+  assert.equal(app.taskTracker.availableUnlocks(), 3);
+  assert.equal(app.taskTracker.unlock("not-a-game"), false);
+  for (const id of ["maze", "neon", "signal-scan"]) assert.equal(app.taskTracker.unlock(id), true);
+  assert.equal(app.taskTracker.unlock("maze"), false);
+  assert.equal(app.taskTracker.unlock("blocks"), false);
+  app.taskTracker.remove(first);
+  assert.equal(app.taskTracker.snapshot().completedTotal, 30);
+  assert.equal(app.taskTracker.snapshot().tasks.length, 29);
+});
+
+test("Task form trims text, rejects blank input and safely displays markup as text", async () => {
+  const app = arcade({}, false);
+  assert.equal(app.taskTracker.add("   "), false);
+  const input = app.element("taskInput");
+  input.value = '  <img src=x onerror="alert(1)">  ';
+  await app.element("taskForm").fire("submit");
+  const task = app.taskTracker.snapshot().tasks[0];
+  assert.equal(task.text, '<img src=x onerror="alert(1)">');
+  assert.equal(input.value, "");
+  assert.equal(app.document.activeElement, input);
+  const row = app.element("taskList").children[0];
+  assert.equal(row.children[0].children[1].textContent, task.text);
+  assert.equal(row.children[0].children[1].innerHTML, "");
+  await row.children[0].children[0].fire("change");
+  assert.equal(app.taskTracker.snapshot().completedTotal, 1);
+  await app.element("taskList").children[0].children[1].fire("click");
+  assert.equal(app.taskTracker.snapshot().tasks.length, 0);
+  assert.equal(app.element("taskEmpty").hidden, false);
+});
+
+test("Tasks, pending rewards and game choices survive refresh without changing shop progress", () => {
+  const app = arcade({ pixelPlayPoints: 600, pixelPlayBest: 3000 }, false);
+  completeTasks(app, 25); app.taskTracker.unlock("signal-scan");
+  app.taskTracker.add("Still to do");
+  const reloaded = arcade(Object.fromEntries(app.storage), false);
+  assert.equal(reloaded.taskTracker.snapshot().tasks.length, 26);
+  assert.equal(reloaded.taskTracker.snapshot().tasks.at(-1).completed, false);
+  assert.equal(reloaded.taskTracker.snapshot().completedTotal, 25);
+  assert.equal(reloaded.taskTracker.availableUnlocks(), 1);
+  assert.equal(reloaded.taskTracker.isUnlocked("signal-scan"), true);
+  assert.equal(reloaded.element("cabinetTitle").textContent, "Signal Scan");
+  assert.equal(reloaded.getPoints(), 600);
+  assert.equal(reloaded.storage.get("pixelPlayBest"), "3000");
+});
+
+test("Reset clears all task and unlock progress and relocks games", () => {
+  const app = arcade({}, false); completeTasks(app, 10);
+  app.taskTracker.unlock("maze"); app.beginGame(); app.resetProgress();
+  assert.equal(app.taskTracker.snapshot().tasks.length, 0);
+  assert.equal(app.taskTracker.snapshot().completedTotal, 0);
+  assert.equal(app.taskTracker.availableUnlocks(), 0);
+  assert.equal(app.taskTracker.isUnlocked("maze"), false);
+  assert.equal(app.element("startButton").disabled, true);
+  app.beginGame(); assert.equal(app.isRunning(), false);
+  const reloaded = arcade(Object.fromEntries(app.storage), false);
+  assert.equal(reloaded.taskTracker.snapshot().unlockedGames.length, 0);
+});
+
+test("Damaged task saves recover safely and saved game unlocks cannot exceed earned rewards", () => {
+  const damaged = arcade({ pixelPlayTaskProgress: "not-json", pixelPlayPoints: 250 }, false);
+  assert.equal(damaged.taskTracker.snapshot().tasks.length, 0);
+  assert.equal(damaged.getPoints(), 250);
+  const saved = JSON.stringify({ tasks: [], completedTotal: 10, unlockedGames: ["maze", "maze", "fake", "neon"] });
+  const app = arcade({ pixelPlayTaskProgress: saved }, false);
+  assert.deepEqual(Array.from(app.taskTracker.snapshot().unlockedGames), ["maze"]);
+  assert.equal(app.taskTracker.availableUnlocks(), 0);
+  assert.equal(app.taskTracker.restore({ completedTotal: -1 }), false);
+  assert.equal(app.taskTracker.isUnlocked("maze"), true);
+});
+
+test("Finishing all games leaves task tracking working with no unusable extra unlocks", () => {
+  const app = arcade();
+  completeTasks(app, 1);
+  assert.equal(app.taskTracker.availableUnlocks(), 0);
+  assert.equal(app.element("taskProgress").value, 10);
+  assert.match(app.element("taskRewardStatus").textContent, /whole arcade is unlocked/);
+});
+
+test("Task controls keep normal Space and arrow behavior instead of sending game input", () => {
+  const app = arcade(); app.selectGame("neon"); app.beginGame();
+  for (const key of [" ", "ArrowRight"]) {
+    let prevented = false;
+    app.handleKey({ key, target: { closest: () => app.element("tasks"), matches: () => false }, preventDefault() { prevented = true; } });
+    assert.equal(prevented, false); assert.equal(app.getState().lane, 1);
+  }
+});
+
+test("Save Vault exports and restores tasks and earned game unlocks, with legacy save support", async () => {
+  const app = arcade({ pixelPlayPoints: 8000, pixelPlayShopItems: '["cloud-save"]' }, false);
+  completeTasks(app, 15); app.taskTracker.unlock("neon"); app.taskTracker.add("Finish tomorrow");
+  await app.element("exportProfile").fire("click");
+  const profile = JSON.parse(await app.downloads[0].text());
+  assert.equal(profile.taskProgress.completedTotal, 15);
+  assert.deepEqual(profile.taskProgress.unlockedGames, ["neon"]);
+  const restored = arcade({ pixelPlayShopItems: '["cloud-save"]' }, false);
+  const restoreSave = async (saved) => {
+    const text = JSON.stringify(saved);
+    await restored.element("importProfile").fire("change", { target: { value: "test.json", files: [{ size: text.length, text: async () => text }] } });
+  };
+  await restoreSave(profile);
+  assert.equal(restored.taskTracker.snapshot().completedTotal, 15);
+  assert.equal(restored.taskTracker.snapshot().tasks.at(-1).text, "Finish tomorrow");
+  assert.equal(restored.taskTracker.isUnlocked("neon"), true);
+  assert.equal(restored.getPoints(), 8000);
+  const legacy = { ...profile }; delete legacy.taskProgress;
+  await restoreSave(legacy);
+  assert.equal(restored.taskTracker.isUnlocked("neon"), true);
+  assert.equal(restored.taskTracker.snapshot().tasks.length, 16);
+  await restoreSave({ ...profile, taskProgress: { completedTotal: -1 } });
+  assert.match(restored.element("shopStatus").textContent, /task progress.*invalid/);
+  assert.equal(restored.taskTracker.isUnlocked("neon"), true);
+});
+
+test("Task updates preserve browsing positions and the chosen category filter", async () => {
+  const app = arcade({}, false);
+  app.element("taskList").scrollTop = 140;
+  app.element("gameCards").scrollTop = 280;
+  await app.element(".filter-row").fire("click", { target: { closest: () => ({ dataset: { filter: "brain" } }) } });
+  app.taskTracker.add("Read a chapter"); app.taskTracker.toggle(1);
+  assert.equal(app.element("taskList").scrollTop, 140);
+  assert.equal(app.element("gameCards").scrollTop, 280);
+  assert.equal(app.getFilter(), "brain");
+});
 
 test("Game takes keyboard focus without moving the page", () => {
   const app = arcade();
