@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101116">
+  <title>Pixel Play // Arcade Lab</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-noise" aria-hidden="true"></div>
+  <div class="blossom-decor blossom-decor-top" aria-hidden="true">
+    <span class="blossom-branch"></span><i class="blossom bloom-one">✿</i><i class="blossom bloom-two">✿</i><i class="blossom bloom-three">✿</i><i class="blossom bloom-four">✿</i><i class="blossom bloom-five">✿</i>
+  </div>
+  <div class="blossom-decor blossom-decor-bottom" aria-hidden="true">
+    <span class="blossom-branch"></span><i class="blossom bloom-one">✿</i><i class="blossom bloom-two">✿</i><i class="blossom bloom-three">✿</i><i class="blossom bloom-four">✿</i>
+  </div>
+  <header class="topbar">
+    <button class="owner-button" id="ownerButton" type="button" aria-haspopup="dialog" aria-controls="ownerModal">OWNER</button>
+    <a class="brand" href="#top" aria-label="Pixel Play home">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span>PIXEL<span class="brand-slash">//</span>PLAY</span>
+    </a>
+    <div class="topbar-meta">
+      <span class="live-dot"><b></b> LIVE ARCADE</span>
+      <span class="top-divider" aria-hidden="true"></span>
+      <span id="clockLabel">00:00:00</span>
+    </div>
+    <button class="shop-button" id="shopToggle" type="button" aria-haspopup="dialog" aria-controls="shopModal">
+      <span aria-hidden="true">✦</span> SHOP <b id="pointsLabel">0</b> PTS
+    </button>
+    <span class="vip-badge" id="vipBadge" hidden>VIP ACCESS</span>
+    <button class="sound-button" id="soundToggle" type="button" aria-pressed="false" title="Toggle arcade sounds">
+      <span aria-hidden="true">♪</span><span class="sound-copy">SOUND OFF</span>
+    </button>
+  </header>
+
+  <main id="top" class="site-wrap">
+    <section class="arcade-layout" aria-label="Game arcade">
+      <aside class="game-list-panel">
+        <div class="section-heading">
+          <div><p class="eyebrow small"><span class="eyebrow-line"></span> THE FLOOR</p><h2>Choose your game</h2></div>
+          <span class="cabinet-count">29 / 29</span>
+        </div>
+        <div class="filter-row" role="group" aria-label="Filter games">
+          <button class="filter-button is-active" type="button" data-filter="all">All</button>
+          <button class="filter-button" type="button" data-filter="arcade">Arcade</button>
+          <button class="filter-button" type="button" data-filter="brain">Brain</button>
+          <button class="filter-button" type="button" data-filter="skill">Skill</button>
+        </div>
+        <div class="game-cards" id="gameCards"></div>
+        <div class="list-footer"><span><i class="footer-signal"></i> all systems ready</span><span>scroll to browse</span></div>
+      </aside>
+
+      <section class="cabinet-section" aria-labelledby="cabinetTitle">
+        <div class="cabinet-heading">
+          <div><p class="eyebrow small"><span class="eyebrow-line"></span> NOW PLAYING</p><h2 id="cabinetTitle">Maze Munch</h2></div>
+          <div class="cabinet-heading-right"><span id="gameTag">ARCADE / 01</span><span class="player-lights"><i></i><i></i><i></i></span></div>
+        </div>
+        <div class="upgrade-notice" id="upgradeNotice" role="status" hidden></div>
+        <div class="record-board" id="recordBoard" hidden></div>
+        <div class="power-dashboard"><span id="powerStats" hidden></span><div id="powerButtons"></div></div>
+        <div class="cabinet" id="cabinet">
+          <div class="cabinet-bezel">
+            <div class="screen-header"><span id="gameLabel">MAZE MUNCH</span><span>1UP <b id="scoreLabel">000000</b></span></div>
+            <div class="game-viewport" id="gameViewport">
+              <canvas id="gameCanvas" width="640" height="400" tabindex="0" aria-label="Maze Munch game canvas"></canvas>
+              <div class="start-overlay" id="startOverlay">
+                <div class="overlay-kicker">READY PLAYER ONE?</div>
+                <h3 id="overlayTitle">MAZE MUNCH</h3>
+                <p id="overlayText">Eat every dot. Dodge the glitch ghosts. Arrow keys or WASD to move.</p>
+                <button class="start-button" id="startButton" type="button"><span>▶</span> START GAME</button>
+                <button class="bonus-stage-button" id="bonusStageButton" type="button" hidden>ENTER BONUS STAGE</button>
+              </div>
+              <div class="pause-badge" id="pauseBadge" hidden>PAUSED <span>press P</span></div>
+            </div>
+            <div class="screen-footer"><span id="objectiveLabel">OBJECTIVE: CLEAR THE GRID</span><span id="livesLabel">♥ ♥ ♥</span></div>
+          </div>
+          <div class="cabinet-controls">
+            <div class="control-cluster">
+              <span class="control-label">MOVE</span>
+              <div class="d-pad" aria-label="Movement controls">
+                <button type="button" data-key="ArrowUp" aria-label="Move up">▲</button>
+                <button type="button" data-key="ArrowLeft" aria-label="Move left">◀</button>
+                <button type="button" data-key="ArrowDown" aria-label="Move down">▼</button>
+                <button type="button" data-key="ArrowRight" aria-label="Move right">▶</button>
+              </div>
+            </div>
+            <div class="control-center" aria-hidden="true"><span class="speaker speaker-one"></span><span class="speaker speaker-two"></span><span class="speaker speaker-three"></span><span class="speaker speaker-four"></span></div>
+            <div class="button-cluster">
+              <span class="control-label">ACTION</span>
+              <div class="arcade-buttons"><button class="arcade-button reset" id="resetButton" type="button" aria-label="Reset all arcade progress" title="Reset all arcade progress">↻</button><button class="arcade-button yellow" id="actionButton" type="button" aria-label="Action">A</button><button class="arcade-button coral" id="pauseButton" type="button" aria-label="Pause game">II</button></div>
+            </div>
+          </div>
+          <div class="cabinet-base"><span>PIXEL//PLAY</span><span>INSERT FUN</span><span>© 2025</span></div>
+        </div>
+        <div class="tip-row"><span class="tip-icon">?</span><span id="tipText">Pro tip: dots in the corners are worth double.</span><span class="tip-key">P / PAUSE</span></div>
+      </section>
+    </section>
+  </main>
+  <div class="shop-modal" id="shopModal" hidden>
+    <div class="shop-backdrop" data-close-shop="true"></div>
+    <section class="shop-panel" role="dialog" aria-modal="true" aria-labelledby="shopTitle">
+      <div class="shop-header">
+        <div><p class="eyebrow small"><span class="eyebrow-line"></span> PRIZE COUNTER</p><h2 id="shopTitle">The Pixel Shop</h2></div>
+        <button class="shop-close" id="shopClose" type="button" aria-label="Close shop">×</button>
+      </div>
+      <div class="shop-balance"><span>YOUR BALANCE</span><strong><b id="shopPointsLabel">0</b> PTS</strong></div>
+      <p class="shop-copy">Play a round to earn 50 pts. Pixel VIP includes every shop item, doubles round rewards, and unlocks the gold floor.</p>
+      <div class="shop-active-effects" id="shopActiveEffects" aria-live="polite">NO ACTIVE UPGRADES</div>
+      <div class="save-vault" id="saveVault" hidden>
+        <button type="button" id="exportProfile">DOWNLOAD SAVE</button>
+        <label for="importProfile">RESTORE SAVE<input id="importProfile" type="file" accept="application/json,.json"></label>
+      </div>
+      <div class="shop-items" id="shopItems"></div>
+      <p class="shop-status" id="shopStatus" aria-live="polite">Choose an upgrade to make the arcade yours.</p>
+    </section>
+  </div>
+  <div class="owner-modal" id="ownerModal" hidden>
+    <div class="owner-backdrop" data-close-owner></div>
+    <section class="owner-panel" role="dialog" aria-modal="true" aria-labelledby="ownerTitle">
+      <div class="owner-header"><h2 id="ownerTitle">Owner Check</h2><button id="ownerClose" type="button" aria-label="Close owner check">×</button></div>
+      <form id="ownerForm">
+        <label for="ownerName">Your name<input id="ownerName" name="name" autocomplete="off" required></label>
+        <label for="ownerColor">Your favorite color<input id="ownerColor" name="color" autocomplete="off" required></label>
+        <label for="ownerSecondColor">Your second favorite color<input id="ownerSecondColor" name="secondColor" autocomplete="off" required></label>
+        <label for="ownerThirdColor">Your third favorite color<input id="ownerThirdColor" name="thirdColor" autocomplete="off" required></label>
+        <label for="ownerGender">Your gender<input id="ownerGender" name="gender" autocomplete="off" required></label>
+        <button class="owner-verify" type="submit">VERIFY OWNER</button>
+      </form>
+      <p id="ownerResult" role="status" aria-live="polite"></p>
+    </section>
+  </div>
+  <footer class="site-footer"><span>PIXEL//PLAY ARCADE LAB</span><span>MADE FOR PLAYING, NOT WAITING</span><span>PRESS ANYTHING</span></footer>
+  <script src="shop-powers.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
